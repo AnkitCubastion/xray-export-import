@@ -29,22 +29,20 @@ $script:IsPSCore = ($PSVersionTable.PSVersion.Major -ge 6)
 # Initialise runtime (TLS, console encoding).
 # -------------------------------------------------------------------
 function Initialize-XrayMig {
-    # Negotiate the BROADEST TLS set the platform supports — incl. TLS 1.3 when
-    # available. Pinning ONLY TLS 1.2/1.1 (the old behaviour) fails against a
-    # server that requires TLS 1.3, which surfaces in Windows PowerShell 5.1 as
-    # "The underlying connection was closed: An unexpected error occurred on a
-    # send." Including 1.3 lets the handshake succeed (and 1.2 servers still
-    # negotiate down).
+    # Let Windows Schannel negotiate the protocol (SystemDefault). This is what
+    # the older scripts that successfully reached this server relied on — PINNING
+    # specific TLS versions broke the handshake here ("The underlying connection
+    # was closed: An unexpected error occurred on a send."). SystemDefault uses
+    # TLS 1.2/1.3 on Windows 10/11.
     try {
-        $proto = [Net.SecurityProtocolType]0
-        foreach ($name in @('Tls13','Tls12','Tls11','Tls')) {
-            try { $proto = $proto -bor [Net.SecurityProtocolType]::$name } catch {}
-        }
-        if ($proto -ne [Net.SecurityProtocolType]0) { [Net.ServicePointManager]::SecurityProtocol = $proto }
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::SystemDefault
     } catch {
-        # If setting an unsupported protocol throws, let Windows Schannel choose
-        # (SystemDefault enables TLS 1.3 on Windows 11 + .NET Framework 4.8).
-        try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::SystemDefault } catch {}
+        # Fallback for older .NET where SystemDefault is absent: enable 1.2 (+1.3).
+        try {
+            $proto = [Net.SecurityProtocolType]::Tls12
+            try { $proto = $proto -bor [Net.SecurityProtocolType]::Tls13 } catch {}
+            [Net.ServicePointManager]::SecurityProtocol = $proto
+        } catch {}
     }
     try { [Net.ServicePointManager]::Expect100Continue = $false } catch {}
     # Proxy handling. Corporate networks often reach the internal Jira ONLY via a
@@ -95,6 +93,20 @@ function Enable-InsecureSource {
     [void]$script:InsecureHosts.Add($h)
 
     if (-not $script:IsPSCore) {
+        # Also install the legacy ICertificatePolicy bypass the old working
+        # scripts used (belt-and-suspenders on Windows PowerShell 5.1).
+        try {
+            if (-not ("XrayTrustAllCertsPolicy" -as [type])) {
+                Add-Type @"
+using System.Net;
+using System.Security.Cryptography.X509Certificates;
+public class XrayTrustAllCertsPolicy : ICertificatePolicy {
+    public bool CheckValidationResult(ServicePoint sp, X509Certificate cert, WebRequest req, int problem) { return true; }
+}
+"@
+            }
+            [System.Net.ServicePointManager]::CertificatePolicy = New-Object XrayTrustAllCertsPolicy
+        } catch {}
         # Scope the trust to our source hosts; everything else validates normally.
         $hosts = $script:InsecureHosts
         [Net.ServicePointManager]::ServerCertificateValidationCallback = {
