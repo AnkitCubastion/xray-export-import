@@ -47,12 +47,27 @@ function Initialize-XrayMig {
         try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::SystemDefault } catch {}
     }
     try { [Net.ServicePointManager]::Expect100Continue = $false } catch {}
-    # Honour the corporate system proxy with the current user's credentials.
+    # Proxy handling. Corporate networks often reach the internal Jira ONLY via a
+    # proxy: the browser uses it, but a DIRECT PowerShell connection can't even
+    # resolve the internal DNS name ("The remote name could not be resolved").
+    #   $env:XRAY_HTTP_PROXY = "http://proxy.host:8080"  -> force this proxy
+    #   $env:XRAY_HTTP_PROXY = "direct"                  -> force a direct connection
+    #   (unset)                                          -> use the system/IE proxy
+    # NOTE: PowerShell 7 (Core) ALSO natively honours $env:HTTPS_PROXY / $env:HTTP_PROXY,
+    # so setting those covers both PS 5.1 (via the WebProxy below) and PS 7.
     try {
-        $wp = [System.Net.WebRequest]::GetSystemWebProxy()
-        if ($wp) {
-            $wp.Credentials = [System.Net.CredentialCache]::DefaultNetworkCredentials
+        $proxyUrl = $env:XRAY_HTTP_PROXY
+        if (-not $proxyUrl) { $proxyUrl = $env:HTTPS_PROXY }
+        if (-not $proxyUrl) { $proxyUrl = $env:HTTP_PROXY }
+        if ($proxyUrl -and $proxyUrl.Trim().ToLower() -eq 'direct') {
+            [System.Net.WebRequest]::DefaultWebProxy = $null
+        } elseif ($proxyUrl) {
+            $wp = New-Object System.Net.WebProxy($proxyUrl, $false)   # $false = do NOT bypass local; internal hosts must go via the proxy
+            $wp.UseDefaultCredentials = $true
             [System.Net.WebRequest]::DefaultWebProxy = $wp
+        } else {
+            $wp = [System.Net.WebRequest]::GetSystemWebProxy()
+            if ($wp) { $wp.Credentials = [System.Net.CredentialCache]::DefaultNetworkCredentials; [System.Net.WebRequest]::DefaultWebProxy = $wp }
         }
     } catch {}
     try { $OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}
