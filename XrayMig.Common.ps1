@@ -345,6 +345,15 @@ function Invoke-Api {
             $attempt++
             $code = Get-HttpStatusCode -ErrorRecord $_
 
+            # Fail fast on DNS / name-resolution / connection-refused failures —
+            # retrying won't help, and for the intranet Jira it almost always
+            # means the corporate VPN is not connected.
+            $emsg = "$($_.Exception.Message)"
+            try { if ($_.Exception.InnerException) { $emsg += " " + $_.Exception.InnerException.Message } } catch {}
+            if ($emsg -match 'could not be resolved|No such host is known|name or service not known|actively refused|No connection could be made') {
+                throw "Cannot reach $Uri ($emsg). If this is the intranet Jira, CONNECT THE CORPORATE VPN first, then verify with:  Test-NetConnection $(([uri]$Uri).Host) -Port 443"
+            }
+
             # One-shot re-auth on 401 (e.g. expired Xray Cloud token).
             if ($code -eq 401 -and $OnUnauthorized -and -not $reAuthed) {
                 $reAuthed = $true; $attempt--
