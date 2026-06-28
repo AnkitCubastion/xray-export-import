@@ -29,12 +29,32 @@ $script:IsPSCore = ($PSVersionTable.PSVersion.Major -ge 6)
 # Initialise runtime (TLS, console encoding).
 # -------------------------------------------------------------------
 function Initialize-XrayMig {
-    # Atlassian Cloud + most modern servers require TLS 1.2+.
+    # Negotiate the BROADEST TLS set the platform supports — incl. TLS 1.3 when
+    # available. Pinning ONLY TLS 1.2/1.1 (the old behaviour) fails against a
+    # server that requires TLS 1.3, which surfaces in Windows PowerShell 5.1 as
+    # "The underlying connection was closed: An unexpected error occurred on a
+    # send." Including 1.3 lets the handshake succeed (and 1.2 servers still
+    # negotiate down).
     try {
-        [Net.ServicePointManager]::SecurityProtocol =
-            [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls11
-    } catch {}
+        $proto = [Net.SecurityProtocolType]0
+        foreach ($name in @('Tls13','Tls12','Tls11','Tls')) {
+            try { $proto = $proto -bor [Net.SecurityProtocolType]::$name } catch {}
+        }
+        if ($proto -ne [Net.SecurityProtocolType]0) { [Net.ServicePointManager]::SecurityProtocol = $proto }
+    } catch {
+        # If setting an unsupported protocol throws, let Windows Schannel choose
+        # (SystemDefault enables TLS 1.3 on Windows 11 + .NET Framework 4.8).
+        try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::SystemDefault } catch {}
+    }
     try { [Net.ServicePointManager]::Expect100Continue = $false } catch {}
+    # Honour the corporate system proxy with the current user's credentials.
+    try {
+        $wp = [System.Net.WebRequest]::GetSystemWebProxy()
+        if ($wp) {
+            $wp.Credentials = [System.Net.CredentialCache]::DefaultNetworkCredentials
+            [System.Net.WebRequest]::DefaultWebProxy = $wp
+        }
+    } catch {}
     try { $OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}
 }
 
