@@ -15,7 +15,7 @@
     AllowInsecureSource = $true       # the internal host uses a self-signed TLS cert
 
     # ---- TARGET: Jira Cloud + Xray Cloud ----
-    JiraCloudUrl     = "https://ankitanku090701.atlassian.net"
+    JiraCloudUrl     = "https://ankit.prasad@cubastion.com"
     CloudProjectKey  = "TEST"         # MUST have Xray Cloud installed + the 6 Xray issue types on its scheme
     XrayCloudBase    = "https://xray.cloud.getxray.app"   # regional: https://us. / https://eu. / https://au.
 
