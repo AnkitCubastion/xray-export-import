@@ -443,12 +443,23 @@ function Invoke-ApiBytes {
 
             # RawContentStream gives true bytes on both 5.1 and 7+ (Content is a
             # decoded STRING on 5.1, which corrupts binaries).
-            if ($resp.PSObject.Properties['RawContentStream'] -and $resp.RawContentStream) {
-                return $resp.RawContentStream.ToArray()
+            $bytes = $null
+            try {
+                if ($resp.PSObject.Properties['RawContentStream'] -and $resp.RawContentStream) {
+                    $bytes = $resp.RawContentStream.ToArray()
+                }
+            } catch {}
+            if ($null -eq $bytes) {
+                $c = $resp.Content
+                if ($c -is [byte[]])      { $bytes = $c }
+                elseif ($null -ne $c)     { $bytes = [System.Text.Encoding]::UTF8.GetBytes([string]$c) }
+                else                      { $bytes = [byte[]]@() }
             }
-            $c = $resp.Content
-            if ($c -is [byte[]]) { return $c }
-            return [System.Text.Encoding]::UTF8.GetBytes([string]$c)
+            # IMPORTANT: the unary comma stops PowerShell from enumerating the
+            # byte[] on return. Without it a 0-byte body unrolls to nothing and
+            # the caller sees $null (WriteAllBytes then throws "Value cannot be
+            # null"); a normal body would come back as Object[] instead of byte[].
+            return ,$bytes
         }
         catch {
             $attempt++

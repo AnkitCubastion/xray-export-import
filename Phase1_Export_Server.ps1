@@ -175,6 +175,10 @@ function Save-Binary {
         Write-Log "    Re-downloading (size mismatch: have $len, expect $ExpectedSize): $LocalPath" "DEBUG"
     }
     $bytes = Invoke-ApiBytes -Uri $Url -Headers $srvHeaders -Channel "server" -ThrottleMs $ServerThrottleMs
+    if ($null -eq $bytes -or $bytes.Length -eq 0) {
+        Write-Log "    Empty body (0 bytes) returned for $Url — not saved (metadata is still recorded)." "WARN"
+        return $false
+    }
     [System.IO.File]::WriteAllBytes($LocalPath, $bytes)
     return $true
 }
