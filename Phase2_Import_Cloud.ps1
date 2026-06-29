@@ -31,7 +31,7 @@
 
 [CmdletBinding()]
 param(
-    [string]  $JiraCloudUrl    = "https://ankitanku090701.atlassian.net",
+    [string]  $JiraCloudUrl    = "https://ankitcubastion.atlassian.net",
     [string]  $CloudProjectKey = "TEST",
     [string]  $XrayCloudBase   = "https://xray.cloud.getxray.app",   # or us/eu/au regional host
     [string]  $ServerProjectKey= "MFTBCTRKD",

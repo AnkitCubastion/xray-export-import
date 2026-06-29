@@ -29,7 +29,7 @@ param(
     [string]$JiraServerUrl    = "https://dta-jira.jpadc.corpintra.net/jira",
     [string]$ServerProjectKey = "MFTBCTRKD",
     [string]$RavenVersion     = "1.0",
-    [string]$JiraCloudUrl     = "https://ankitanku090701.atlassian.net",
+    [string]$JiraCloudUrl     = "https://ankitcubastion.atlassian.net",
     [string]$CloudProjectKey  = "TEST",
     [string]$XrayCloudBase    = "https://xray.cloud.getxray.app",   # or us/eu/au regional host
     [switch]$AllowInsecureSource = $true,                            # trust the self-signed source cert
