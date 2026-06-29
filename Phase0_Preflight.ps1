@@ -112,6 +112,10 @@ if (-not $SkipSource) {
 if (-not $SkipTarget) {
     Write-Section "TARGET — JIRA CLOUD + XRAY CLOUD"
 
+    try { Confirm-BaseUrl -Url $JiraCloudUrl -Name "JiraCloudUrl" | Out-Null }
+    catch { Add-Check "TARGET" "Jira Cloud URL valid" $false $_.Exception.Message; $SkipTarget = $true }
+}
+if (-not $SkipTarget) {
     $cloudEmail = Get-PlainValue  -EnvVarName "JIRA_CLOUD_EMAIL" -Prompt "Enter Jira Cloud Email"
     $cloudToken = Get-SecretValue -EnvVarName "JIRA_CLOUD_TOKEN" -Prompt "Enter Jira Cloud API Token"
     $cloudHeaders = New-BasicAuthHeader -User $cloudEmail -Secret $cloudToken

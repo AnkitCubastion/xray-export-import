@@ -15,7 +15,11 @@
     AllowInsecureSource = $true       # the internal host uses a self-signed TLS cert
 
     # ---- TARGET: Jira Cloud + Xray Cloud ----
-    JiraCloudUrl     = "https://ankit.prasad@cubastion.com"
+    # !!! REPLACE the placeholder below with YOUR Jira Cloud SITE URL — the
+    # address shown in your browser when you're in Jira (ends in .atlassian.net),
+    # e.g. https://cubastion.atlassian.net. This is NOT your email; your login
+    # email is entered at the prompt (or via $env:JIRA_CLOUD_EMAIL).
+    JiraCloudUrl     = "https://ankitcubastion.atlassian.net"
     CloudProjectKey  = "TEST"         # MUST have Xray Cloud installed + the 6 Xray issue types on its scheme
     XrayCloudBase    = "https://xray.cloud.getxray.app"   # regional: https://us. / https://eu. / https://au.
 

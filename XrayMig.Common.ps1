@@ -136,6 +136,25 @@ function Test-InsecureHost {
     try { return $script:InsecureHosts.Contains(([uri]$Uri).Host) } catch { return $false }
 }
 
+# Validate a base URL is a real site (not an email / malformed). Throws with a
+# clear message so a mistyped JiraCloudUrl fails instantly instead of after a
+# 9-minute retry storm against the wrong host.
+function Confirm-BaseUrl {
+    param([Parameter(Mandatory)][string]$Url, [string]$Name = "URL")
+    $u = $null
+    try { $u = [uri]$Url } catch {}
+    if (-not $u -or [string]::IsNullOrWhiteSpace($u.Host) -or $u.Scheme -notmatch '^https?$') {
+        throw "$Name is not a valid site URL: '$Url'. Use the form https://yoursite.atlassian.net"
+    }
+    if ($u.UserInfo -or $Url -match '@') {
+        throw "$Name looks like an EMAIL address ('$Url'), not a site URL. Set $Name to your Jira Cloud SITE (e.g. https://yoursite.atlassian.net). Your login email goes in the email prompt / JIRA_CLOUD_EMAIL, not here."
+    }
+    if ($u.Host -match '(?i)YOUR-?SITE|CHANGE-?ME|yoursite|example\.') {
+        throw "$Name is still a placeholder ('$($u.Host)'). Edit config.ps1 and set it to your real Jira Cloud site (the https://<site>.atlassian.net address from your browser)."
+    }
+    return $u
+}
+
 # -------------------------------------------------------------------
 # Logging
 # -------------------------------------------------------------------
@@ -352,6 +371,9 @@ function Invoke-Api {
             }
             if ($emsg -match 'unexpected error occurred on a send|Could not create SSL/TLS|trust relationship|secure channel|SSL connection could not be established') {
                 throw "TLS handshake to $Uri failed ($emsg). Fixes, in order: (1) ensure -AllowInsecureSource is on (it trusts the self-signed cert); (2) run under PowerShell 7:  pwsh -File .\Run-Migration.ps1 ; (3) confirm the host directly with:  curl.exe -sk -u <user> $Uri"
+            }
+            if ($emsg -match 'request was aborted|connection was closed unexpectedly') {
+                throw "Connection to $Uri was closed unexpectedly ($emsg). Check the host is correct and reachable — for Jira Cloud this MUST be https://<site>.atlassian.net (not an email), and any VPN/proxy must be connected."
             }
 
             # One-shot re-auth on 401 (e.g. expired Xray Cloud token).

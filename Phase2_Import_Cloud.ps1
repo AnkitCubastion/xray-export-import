@@ -109,6 +109,10 @@ function Add-Done { param([string]$Name,[string]$Key,[System.Collections.Generic
 # AUTH — Jira Cloud + Xray Cloud
 # ===================================================================
 Write-Section "JIRA CLOUD LOGIN"
+try {
+    Confirm-BaseUrl -Url $JiraCloudUrl  -Name "JiraCloudUrl"  | Out-Null
+    Confirm-BaseUrl -Url $XrayCloudBase -Name "XrayCloudBase" | Out-Null
+} catch { Write-Log $_.Exception.Message "ERROR"; exit 1 }
 $cloudEmail = Get-PlainValue  -EnvVarName "JIRA_CLOUD_EMAIL" -Prompt "Enter Jira Cloud Email"
 $cloudToken = Get-SecretValue -EnvVarName "JIRA_CLOUD_TOKEN" -Prompt "Enter Jira Cloud API Token"
 $cloudHeaders = New-BasicAuthHeader -User $cloudEmail -Secret $cloudToken
