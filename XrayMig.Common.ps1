@@ -434,13 +434,6 @@ function Invoke-ApiBytes {
             if ($skipCert) { $p.SkipCertificateCheck = $true }
             $resp = Invoke-WebRequest @p
 
-            # Reject a login page returned as 200 (wrong/expired session).
-            $ctype = ""
-            try { $ctype = [string]$resp.Headers["Content-Type"] } catch {}
-            if ($ctype -match 'text/html') {
-                throw "Expected a binary file but received text/html (likely a login page) from $Uri"
-            }
-
             # RawContentStream gives true bytes on both 5.1 and 7+ (Content is a
             # decoded STRING on 5.1, which corrupts binaries).
             $bytes = $null
@@ -454,6 +447,20 @@ function Invoke-ApiBytes {
                 if ($c -is [byte[]])      { $bytes = $c }
                 elseif ($null -ne $c)     { $bytes = [System.Text.Encoding]::UTF8.GetBytes([string]$c) }
                 else                      { $bytes = [byte[]]@() }
+            }
+
+            # Guard ONLY against an actual Jira login page returned as 200 (lost
+            # auth/session). Do NOT reject legitimate .html/.htm attachments
+            # (e.g. TestNG emailable-report.html) just because the type is text/html
+            # — sniff the body for login-form markers instead.
+            $ctype = ""
+            try { $ctype = [string]$resp.Headers["Content-Type"] } catch {}
+            if ($ctype -match 'text/html' -and $bytes.Length -gt 0) {
+                $head = ""
+                try { $head = [System.Text.Encoding]::UTF8.GetString($bytes, 0, [Math]::Min(4096, $bytes.Length)) } catch {}
+                if ($head -match '(?i)os_username|os_password|name="login-form"|id="login-form"|name="loginform"|/login\.jsp|jira-login|action="/login') {
+                    throw "Received the Jira login page instead of the file (auth/session issue) from $Uri"
+                }
             }
             # IMPORTANT: the unary comma stops PowerShell from enumerating the
             # byte[] on return. Without it a 0-byte body unrolls to nothing and
