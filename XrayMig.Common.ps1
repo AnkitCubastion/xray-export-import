@@ -93,8 +93,17 @@ function Enable-InsecureSource {
     [void]$script:InsecureHosts.Add($h)
 
     if (-not $script:IsPSCore) {
-        # Also install the legacy ICertificatePolicy bypass the old working
-        # scripts used (belt-and-suspenders on Windows PowerShell 5.1).
+        # Windows PowerShell 5.1 / .NET Framework: trust the self-signed source
+        # via the legacy COMPILED ICertificatePolicy — exactly what the old
+        # working scripts used.
+        #
+        # We deliberately DO NOT install a PowerShell scriptblock
+        # ServerCertificateValidationCallback. .NET invokes that callback
+        # asynchronously during the TLS handshake; under Set-StrictMode any
+        # variable that is out of scope at that moment (e.g. $hosts) THROWS, and
+        # .NET reports a thrown validation callback as "The underlying connection
+        # was closed: An unexpected error occurred on a send." — the exact
+        # failure that blocked this migration. A compiled policy has no pitfall.
         try {
             if (-not ("XrayTrustAllCertsPolicy" -as [type])) {
                 Add-Type @"
@@ -106,22 +115,9 @@ public class XrayTrustAllCertsPolicy : ICertificatePolicy {
 "@
             }
             [System.Net.ServicePointManager]::CertificatePolicy = New-Object XrayTrustAllCertsPolicy
+            # Make sure no (throwing) scriptblock callback is left set.
+            [System.Net.ServicePointManager]::ServerCertificateValidationCallback = $null
         } catch {}
-        # Scope the trust to our source hosts; everything else validates normally.
-        $hosts = $script:InsecureHosts
-        [Net.ServicePointManager]::ServerCertificateValidationCallback = {
-            param($senderObj, $cert, $chain, $errors)
-            if ($errors -eq [System.Net.Security.SslPolicyErrors]::None) { return $true }
-            try {
-                $reqHost = $null
-                if ($senderObj -is [System.Net.HttpWebRequest]) { $reqHost = $senderObj.RequestUri.Host }
-                elseif ($senderObj -and $senderObj.PSObject.Properties['Host']) { $reqHost = $senderObj.Host }
-                if ($reqHost -and $hosts.Contains($reqHost)) { return $true }
-            } catch {}
-            # If we can't identify the host (some SslStream callers), fall back to the
-            # allowlist being non-empty AND export-only context — trust it.
-            return ($hosts.Count -gt 0)
-        }
     }
     Write-Host "  TLS trust override enabled for source host: $h" -ForegroundColor DarkGray
 }
@@ -130,6 +126,7 @@ function Disable-InsecureSource {
     $script:InsecureHosts.Clear()
     if (-not $script:IsPSCore) {
         try { [Net.ServicePointManager]::ServerCertificateValidationCallback = $null } catch {}
+        try { [Net.ServicePointManager]::CertificatePolicy = $null } catch {}
     }
 }
 
@@ -352,6 +349,9 @@ function Invoke-Api {
             try { if ($_.Exception.InnerException) { $emsg += " " + $_.Exception.InnerException.Message } } catch {}
             if ($emsg -match 'could not be resolved|No such host is known|name or service not known|actively refused|No connection could be made') {
                 throw "Cannot reach $Uri ($emsg). If this is the intranet Jira, CONNECT THE CORPORATE VPN first, then verify with:  Test-NetConnection $(([uri]$Uri).Host) -Port 443"
+            }
+            if ($emsg -match 'unexpected error occurred on a send|Could not create SSL/TLS|trust relationship|secure channel|SSL connection could not be established') {
+                throw "TLS handshake to $Uri failed ($emsg). Fixes, in order: (1) ensure -AllowInsecureSource is on (it trusts the self-signed cert); (2) run under PowerShell 7:  pwsh -File .\Run-Migration.ps1 ; (3) confirm the host directly with:  curl.exe -sk -u <user> $Uri"
             }
 
             # One-shot re-auth on 401 (e.g. expired Xray Cloud token).
