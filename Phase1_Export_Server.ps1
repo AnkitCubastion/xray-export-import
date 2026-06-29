@@ -437,14 +437,31 @@ function Get-XrayPreconditionData {
 # XRAY: TEST SET / TEST PLAN memberships
 # ===================================================================
 function Get-RavenMemberKeys {
-    param([string]$Url)
+    # Xray raven caps membership responses at 200 items per request (testexec/test,
+    # testset/test, testplan/test, testplan/testexecution). A Test Execution / Set /
+    # Plan with >200 members 400s without pagination, so page through with page/limit.
+    param([string]$Url, [int]$Limit = 100)   # stay safely under the raven 200/req cap
     $keys = @()
-    try {
-        $resp = Invoke-Api -Uri $Url -Headers $srvHeaders -Channel "server" -ThrottleMs $ServerThrottleMs
-        foreach ($x in $resp) {
+    $page = 1
+    while ($true) {
+        $sep     = if ($Url -match '\?') { '&' } else { '?' }
+        $pageUrl = "$Url${sep}page=$page&limit=$Limit"
+        try {
+            $resp = Invoke-Api -Uri $pageUrl -Headers $srvHeaders -Channel "server" -ThrottleMs $ServerThrottleMs
+        } catch {
+            Write-Log "    membership fetch failed ($pageUrl): $($_.Exception.Message)" "WARN"
+            break
+        }
+        if ($null -eq $resp) { break }
+        $batch = @($resp)
+        if ($batch.Count -eq 0) { break }
+        foreach ($x in $batch) {
+            if ($null -eq $x) { continue }
             $keys += [pscustomobject]@{ key=(Get-Prop $x "key"); rank=(Get-Prop $x "rank"); status=(Get-Prop $x "status") }
         }
-    } catch { Write-Log "    membership fetch failed ($Url): $($_.Exception.Message)" "WARN" }
+        if ($batch.Count -lt $Limit) { break }   # last page
+        $page++
+    }
     return $keys
 }
 
